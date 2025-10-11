@@ -1,9 +1,10 @@
 options(survey.lonely.psu = "adjust")
 library(dplyr)
 library(srvyr)
+library(data.table)
 
-pervic2 <- data.table::fread("data/envipe_2025_csv/TPer_Vic2.csv")
-modvic <- data.table::fread("data/envipe_2025_csv/TMod_Vic.csv")
+pervic2 <- fread("data/envipe_2025_csv/TPer_Vic2.csv")
+modvic <- fread("data/envipe_2025_csv/TMod_Vic.csv")
 
 # En 2024, 29.0% de los hogares en México tuvo al menos una
 # o un integrante víctima de delito Tabla 7.1
@@ -36,3 +37,31 @@ pervic2 |>
   as_survey_design(ids = UPM, strata = EST_DIS, weights = FAC_ELE) |> 
   summarise(survey_ratio(VIC, POB)) |> 
   mutate(across(everything(), ~.x * 100000))
+
+# Los delitos más frecuentes fueron fraude, robo o asalto
+# en calle o transporte público y extorsión Tabla 1.13
+
+tasa_inci <- function(delito) {
+  modvic |>
+    filter(BPCOD %in% delitos[[delito]]) |>
+    mutate(FAC_DEL00 = if_else(!BPCOD %in% 3, FAC_DEL,0)) |>
+    _[, .(TDEO00 = sum(FAC_DEL00)), by = .(ID_PER)] |>
+    right_join(pervic2, by = "ID_PER") |>
+    tidyr::replace_na(list(TDEO00 = 0)) |>
+    as_survey_design(ids = UPM_DIS, strata = EST_DIS) |>
+    summarise(survey_ratio(TDEO00, FAC_ELE)) |>
+    mutate(across(everything(), ~.x * 100000), delito = delito)
+}
+
+delitos <- list(
+  fraude = c(7,8),
+  asalto_transp  = 5,
+  extorsion = 9,
+  amenazas = 10,
+  robo = c(1,2)
+)
+
+
+purrr::map(c("fraude", "asalto_transp", "extorsion", "amenazas", "robo"), tasa_inci) |>
+  purrr::list_rbind() |>
+  arrange(desc(coef))
