@@ -61,7 +61,23 @@ delitos <- list(
   robo = c(1,2)
 )
 
-
 purrr::map(c("fraude", "asalto_transp", "extorsion", "amenazas", "robo"), tasa_inci) |>
   purrr::list_rbind() |>
   arrange(desc(coef))
+
+# 93.2% de los 33.5 millones de delitos que ocurrieron no se denunció o
+# la autoridad no inició una carpeta de investigación.
+# Este subregistro se conoce como cifra oculta Tabla 3.3
+
+modvic |>
+  mutate(
+    DO = if_else(!BPCOD %in% 3, 1, 0),
+    DD = if_else(!BPCOD %in% 3 & (BP1_20 %in% 1 | BP1_21 %in% 1), 1, 0),
+    DND = if_else(!BPCOD %in% 3 & (!BP1_20 %in% 1 & !BP1_21 %in% c(1,9)), 1, 0),
+    DSAP = if_else((DD %in% 1) & (BP1_24 %in% 2 | BP1_24 %in% 9), 1, 0),
+    DNE = if_else((DD %in% 1) & (BP1_22 %in% 2 | BP1_24 %in% 9), 1, 0),
+    NE = if_else(!BPCOD %in% 3 & BP1_21 %in% 9, 1, 0),
+    CO = if_else(DND %in% 1 | DSAP %in% 1 | DNE %in% 1 | NE %in% 1, 1, 0)
+  ) |>
+  as_survey_design(ids = UPM, strata = EST_DIS, weights = FAC_DEL) |>
+  summarise(delitos = survey_total(DO), cifra_oculta = survey_ratio(CO,DO))
