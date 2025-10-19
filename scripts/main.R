@@ -22,10 +22,9 @@ pervic2 |>
 # 23.1 millones de personas de 18 años y más fueron víctimas
 # de algún delito Tabla 1.16 
 pervic2 |> 
-  filter(ID_PER %in% modvic[!modvic$BPCOD %in% 3,]$ID_PER) |> 
+  mutate(VIC = if_else(ID_PER %in% modvic[!modvic$BPCOD %in% 3,]$ID_PER, 1, 0)) |>
   as_survey_design(ids = UPM, strata = EST_DIS, weights = FAC_ELE) |> 
-  summarise(survey_total())
-
+  summarise(survey_total(VIC))
 
 # La tasa de prevalencia delictiva fue de 24 135 víctimas por
 # cada 100 mil habitantes Tabla 1.1 
@@ -58,10 +57,16 @@ delitos <- list(
   asalto_transp  = 5,
   extorsion = 9,
   amenazas = 10,
-  robo = c(1,2)
+  robo_hab = 4,
+  robo_tot_veh = 1,
+  robo_par_veh = 2,
+  robo_dist = 6,
+  lesiones = 11,
+  otros_deli = c(15,13,14,12),
+  robo_tot_par_veh = c(1,2)
 )
 
-purrr::map(c("fraude", "asalto_transp", "extorsion", "amenazas", "robo"), tasa_inci) |>
+purrr::map(c("fraude", "asalto_transp", "extorsion", "amenazas", "robo_tot_par_veh"), tasa_inci) |>
   purrr::list_rbind() |>
   arrange(desc(coef))
 
@@ -81,3 +86,27 @@ modvic |>
   ) |>
   as_survey_design(ids = UPM, strata = EST_DIS, weights = FAC_DEL) |>
   summarise(delitos = survey_total(DO), cifra_oculta = survey_ratio(CO,DO))
+
+
+# Pérdidas totales por tipo de delito según tipo de erogaciones 2024
+# Tabla 4.23
+
+perdida_tot <- function(delito) {
+  modvic |>
+    filter(BPCOD %in% delitos[[delito]]) |>
+    mutate(
+      BP1_34 = if_else(BP1_34 < 9999999, as.numeric(BP1_34) * FAC_DEL, 0),
+      BP1_35 = if_else(BP1_35 < 9999999, as.numeric(BP1_35) * FAC_DEL, 0)
+    ) |>
+    _[, .(BP1_34 = sum(BP1_34, na.rm = T), BP1_35 = sum(BP1_35, na.rm = T)), by = .(ID_PER)] |>
+    right_join(pervic2, by = "ID_PER") |>
+    as_survey_design(ids = UPM_DIS, strata = EST_DIS) |>
+    summarise(total_perdidas = survey_total(BP1_34 + BP1_35, na.rm = T),
+              perdidas_delitos = survey_total(BP1_34, na.rm = T),
+              gastos_salud = survey_total(BP1_35, na.rm = T),
+              delito = delito)
+}
+
+purrr::map(c("robo_tot_veh", "fraude", "asalto_transp", "extorsion", "robo_hab",
+             "robo_par_veh", "amenazas", "robo_dist", "lesiones", "otros_deli"), perdida_tot) |>
+  purrr::list_rbind()
